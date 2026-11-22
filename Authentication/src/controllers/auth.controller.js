@@ -139,6 +139,18 @@ async function loginController(req, res) {
       { expiresIn: "7d" },
     );
 
+    const sessionLoginRefreshToken = {
+      refreshToken,
+      createdAt: new Date().toISOString(),
+      device: req.headers["user-agent"] || "Unknown",
+      ipAddress: req.ip || req.connection.remoteAddress || "Unknown",
+    };
+
+    await redis.set(
+  `authSession:${user._id}`,
+  JSON.stringify(sessionLoginRefreshToken),
+  { EX: 10 } // 10 seconds
+);
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true, // JS can't access it
       secure: true,
@@ -203,19 +215,17 @@ async function refreshTokenController(req, res) {
 
 async function getMyProfile(req, res) {
   try {
-    const userId = req.user; // 1. FIXED: Extracting ID assuming req.user is an object
+    const userId = req.user;
 
-    // 2. FIXED: Cache key should be unique to the user, not a global "users" string
-    const cacheKey = `user:${userId}`; 
+    const cacheKey = `user:${userId}`;
     const cachedData = await redis.get(cacheKey);
 
     if (cachedData) {
       console.log("Cache HITT");
 
-      // 3. FIXED: Typo corrected from JSON.parase to JSON.parse
-      const data = JSON.parse(cachedData); 
+      const data = JSON.parse(cachedData);
 
-      return res.json({ // Added return to prevent execution flow bugs
+      return res.json({
         data: data,
       });
     } else {
@@ -225,11 +235,10 @@ async function getMyProfile(req, res) {
         return res.status(404).json({ message: "User not found" });
       }
 
-      // 4. FIXED: Corrected lowercase 'ex' and set it to a valid integer (60 seconds)
       await redis.set(cacheKey, JSON.stringify(user), "EX", 60);
 
       return res.status(200).json({
-        message: "Registration Details Fetched Successfully!!", // Typo fix: Featched -> Fetched
+        message: "Registration Details Fetched Successfully!!",
         data: user,
       });
     }
