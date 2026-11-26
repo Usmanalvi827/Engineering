@@ -3,10 +3,14 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import redis from "../config/redis.js";
 import { json } from "express";
+import {
+  otpGenerateController,
+  verifyOtpController,
+} from "./otp.controller.js";
 
 async function registerController(req, res) {
   try {
-    const {
+    let {
       firstname,
       lastname,
       username,
@@ -66,8 +70,8 @@ async function registerController(req, res) {
       return res.status(400).json({ message: "Passwords do not match" });
     }
 
-    const isUserExist = userModel.findOne({
-      $or: [{ email }, { phonenumber }],
+    const isUserExist = await userModel.findOne({
+      $or: [{ email }, { phonenumber: cleaned }],
     });
 
     if (isUserExist) {
@@ -78,27 +82,26 @@ async function registerController(req, res) {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const newUser = await userModel.create({
-      firstname,
-      lastname,
-      username,
-      phonenumber,
-      email,
-      password: hashedPassword,
-    });
+    redis.set(
+      `userRedis:${cleaned}`,
+      JSON.stringify({
+        firstname,
+        lastname,
+        username,
+        phonenumber: cleaned,
+        email,
+        password: hashedPassword,
+      }),
+      "EX",
+      300,
+    );
 
-    return res.status(201).json({
-      message: "Registration Successful.",
-      user: {
-        id: newUser._id,
-        firstName: newUser.firstname,
-        lastName: newUser.lastname,
-        userName: newUser.username,
-        phoneNumber: newUser.phonenumber,
-        email: newUser.email,
-      },
-    });
+    const otp = await otpGenerateController(cleaned);
+    console.log("OTP FROM controller", otp);
+    return res.json({ message: "OTP sent to your number", phonenumber: cleaned });
+
   } catch (error) {
+    await redis.del(`otp:${cleaned}`);
     console.error("Register Error Details:", error.message);
     return res.status(500).json({
       success: false,
@@ -147,10 +150,10 @@ async function loginController(req, res) {
     };
 
     await redis.set(
-  `authSession:${user._id}`,
-  JSON.stringify(sessionLoginRefreshToken),
-  { EX: 10 } // 10 seconds
-);
+      `authSession:${user._id}`,
+      JSON.stringify(sessionLoginRefreshToken),
+      { EX: 10 }, // 10 seconds
+    );
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true, // JS can't access it
       secure: true,
