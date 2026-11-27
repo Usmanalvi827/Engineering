@@ -19,7 +19,7 @@ async function verifyOtpController(req, res) {
     }
 
     const savedOtp = await redis.get(`otp:${cleaned}`);
-    console.log("savedOTP ==> ", savedOtp);
+    console.log("savedOTP ==< ", savedOtp);
 
     if (!savedOtp) {
       return res.status(400).json({ message: "OTP expired" });
@@ -34,6 +34,7 @@ async function verifyOtpController(req, res) {
       return res.status(400).json({ message: "Session expired, register again" });
     }
 
+    // 2. String ko wapis object banaya
     const userData = JSON.parse(userDataString);
 
     const newUser = await userModel.create(userData);
